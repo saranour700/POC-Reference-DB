@@ -1,0 +1,12 @@
+scrapling>=0.4.0
+dlt>=1.0.0
+duckdb>=1.0.0
+pandas>=2.0.0
+pyyaml>=6.0
+python-dotenv>=1.0.0
+loguru>=0.7.0
+httpx>=0.28.0
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+curl-cffi>=0.15.0
+datasets>=3.0.0

@@ -1,0 +1,19 @@
+services:
+  poc:
+    build: .
+
+    container_name: reference-db-poc
+
+    volumes:
+      - .:/app
+
+    env_file:
+      - .env
+
+    working_dir: /app
+
+    stdin_open: true
+    tty: true
+
+    environment:
+      - PYTHONUNBUFFERED=1

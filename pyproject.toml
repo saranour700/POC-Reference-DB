@@ -1,0 +1,22 @@
+[project]
+name = "reference-db-poc"
+version = "0.1.0"
+description = "Proof of Concept — Reference DB Scraping Pipeline"
+requires-python = ">=3.11"
+dependencies = [
+    "scrapling",
+    "dlt",
+    "duckdb",
+    "pandas",
+    "pyyaml",
+    "python-dotenv",
+    "loguru",
+    "httpx",
+    "beautifulsoup4",
+    "lxml",
+    "curl-cffi",
+    "datasets",
+]
+
+[project.scripts]
+refdb = "main:main"
