@@ -43,9 +43,9 @@ class ComplimentsScraper(BaseScraper):
                     products.append(product)
             else:
                 partial = self._make_partial_product(pid)
-                if fetch_details and partial.get("retailer_product_id") and partial.get("slug"):
+                if fetch_details and partial.get("retailer_product_id"):
                     detail = self.scrape_detail(
-                        pid, partial["slug"], partial["retailer_product_id"]
+                        pid, "", partial["retailer_product_id"]
                     )
                     if detail:
                         partial.update(detail)
@@ -134,6 +134,130 @@ class ComplimentsScraper(BaseScraper):
             self.logger.error(f"Failed to parse INITIAL_STATE: {e}")
             return None
 
+    def scrape_nutrition(self, retailer_product_id: str) -> dict[str, Any] | None:
+        url = f"https://voila.ca/products/_/{retailer_product_id}"
+        try:
+            resp = self._fetch(url)
+            if resp.status_code != 200:
+                url = f"https://voila.ca/products/dummy/{retailer_product_id}"
+                resp = self._fetch(url)
+            return self._parse_nutrition(resp.text, retailer_product_id)
+        except Exception as e:
+            self.logger.warning(f"Failed to fetch nutrition for {retailer_product_id}: {e}")
+        return None
+
+    def scrape_all_nutrition(self, products: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        nutrition_records = []
+        for p in products:
+            rid = p.get("retailer_product_id")
+            if not rid:
+                continue
+            nutrition = self.scrape_nutrition(rid)
+            if nutrition:
+                nutrition_records.append(nutrition)
+                self.logger.info(f"  Nutrition for {p.get('product_name', rid)}: {nutrition.get('calories')} cal")
+        return nutrition_records
+
+    def _parse_nutrition(self, html: str, retailer_product_id: str) -> dict[str, Any] | None:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "lxml")
+        header = soup.find(["h2", "h3", "h4"], string=re.compile(r"Nutrit", re.I))
+        if not header:
+            return None
+
+        serving_size = ""
+        parent = header.parent
+        if parent:
+            text_after = parent.get_text()
+            match = re.search(r"per\s+(.+?)(?:\s*<br|\s*</div|\s*<table)", text_after, re.I | re.DOTALL)
+            if not match:
+                elem = header.find_next_sibling(string=True)
+                if elem:
+                    serving_size = elem.strip()
+            else:
+                serving_size = match.group(1).strip()
+
+        table = header.find_next("table")
+        if not table:
+            return None
+
+        result = {
+            "product_id": None,
+            "retailer_product_id": retailer_product_id,
+            "serving_size": serving_size,
+            "scraped_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        nutrient_map = {
+            "calories": ("calories", None),
+            "fat": ("fat_g", "fat_daily_pct"),
+            "saturated": ("saturated_fat_g", "saturated_fat_daily_pct"),
+            "trans": ("trans_fat_g", None),
+            "polyunsaturated": ("polyunsaturated_fat_g", None),
+            "monounsaturated": ("monounsaturated_fat_g", None),
+            "omega6": ("omega6_g", None),
+            "omega3": ("omega3_g", None),
+            "carbohydrate": ("carbohydrate_g", "carbohydrate_daily_pct"),
+            "fibre": ("fibre_g", "fibre_daily_pct"),
+            "sugars": ("sugars_g", "sugars_daily_pct"),
+            "sugaralcohols": ("sugar_alcohols_g", None),
+            "protein": ("protein_g", None),
+            "cholesterol": ("cholesterol_mg", None),
+            "sodium": ("sodium_mg", "sodium_daily_pct"),
+            "potassium": ("potassium_mg", "potassium_daily_pct"),
+            "calcium": ("calcium_mg", "calcium_daily_pct"),
+            "iron": ("iron_mg", "iron_daily_pct"),
+        }
+
+        rows = table.find_all("tr")
+        for row in rows:
+            cols = row.find_all(["td", "th"])
+            if not cols:
+                continue
+            cell_text = cols[0].get_text(strip=True)
+
+            # Extract nutrient name and value from combined text like "Calories 170" or "Fat 2 g"
+            key = None
+            value = None
+            pct = None
+
+            for nutrient_name, (value_key, pct_key) in nutrient_map.items():
+                if cell_text.lower().startswith(nutrient_name) or cell_text.lower().replace(" ", "").startswith(nutrient_name):
+                    key = nutrient_name
+                    # Extract numeric value from cell text
+                    value = self._extract_nutrient_value(cell_text, nutrient_name)
+                    # Extract % daily value from second cell
+                    if len(cols) > 1:
+                        pct_text = cols[1].get_text(strip=True)
+                        pct = self._extract_percentage(pct_text)
+                    break
+
+            if key:
+                v_key, p_key = nutrient_map[key]
+                if v_key:
+                    result[v_key] = value
+                if p_key and pct is not None:
+                    result[p_key] = pct
+
+        return result
+
+    def _extract_nutrient_value(self, text: str, nutrient_name: str) -> float | None:
+        # Remove nutrient name prefix
+        after = re.sub(r'^[\s\u2000-\u206F]*' + re.escape(nutrient_name) + r'[\s\u2000-\u206F]*', '', text, flags=re.IGNORECASE)
+        # Extract number with optional decimal and unit
+        match = re.search(r'(\d+\.?\d*)', after)
+        if match:
+            return float(match.group(1))
+        return None
+
+    def _extract_percentage(self, text: str) -> float | None:
+        if not text:
+            return None
+        match = re.search(r'(\d+\.?\d*)\s*%', text)
+        if match:
+            return float(match.group(1))
+        return None
+
     def _extract_jsonld(self, html: str) -> list[dict] | None:
         scripts = re.findall(
             r'<script[^>]*type="application/ld\+json"[^>]*>(.*?)</script>',
@@ -201,7 +325,6 @@ class ComplimentsScraper(BaseScraper):
         return {
             "product_id": pid,
             "retailer_product_id": retailer_product_id,
-            "slug": slug,
             "brand": "Compliments",
             "product_name": None,
             "price_cad": None,

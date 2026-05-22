@@ -11,6 +11,13 @@ sources:
       page_param: page
       page_size: 50
 
+  sobeys:
+    name: Sobeys Compliments
+    brand: Compliments
+    type: sobeys
+    product_url_template: https://www.sobeys.com/products/{slug}
+    slugs_file: data/slug_by_rid.json
+
   smartlabel:
     name: SmartLabel
     enabled: false
