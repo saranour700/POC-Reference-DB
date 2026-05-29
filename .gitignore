@@ -126,7 +126,6 @@ logs/
 *.db-shm
 *.db-wal
 *.duckdb
-<<<<<<< HEAD
 .duckdb/
 
 # VS Code
@@ -145,5 +144,3 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
-=======
->>>>>>> 71edc5c (Remove tracked duckdb files, update gitignore)

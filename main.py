@@ -8,6 +8,7 @@ from utils.logger import setup_logger
 from utils.config import get_pipeline_config, get_sources_config
 from scrapers.compliments.scraper import ComplimentsScraper
 from scrapers.sobeys.scraper import SobeysScraper
+from scrapers.alimentsduquebec.scraper import AlimentsDuQuebecScraper
 from pipelines.ingestion.run import run_ingestion_pipeline
 from storage.huggingface.upload import HuggingFaceUploader
 
@@ -99,6 +100,27 @@ def run_nutrition_pipeline(max_products: int = 300, upload_hf: bool = False):
     logger.info("Nutrition pipeline completed successfully!")
 
 
+def run_alimentsduquebec_pipeline(upload_hf: bool = False):
+    logger.info("Starting Aliments du Québec scraping pipeline...")
+
+    scraper = AlimentsDuQuebecScraper()
+    products = scraper.scrape()
+    scraper.close()
+
+    if not products:
+        logger.error("No products scraped")
+        return
+
+    logger.info(f"Scraped {len(products)} products")
+
+    if upload_hf:
+        uploader = HuggingFaceUploader(repo_id="saraNour/alimentsduquebec-products")
+        url = uploader.upload(products)
+        logger.info(f"Uploaded to Hugging Face: {url}")
+
+    logger.info("Aliments du Québec pipeline completed successfully!")
+
+
 def run_sobeys_pipeline(upload_hf: bool = False):
     logger.info("Starting Sobeys scraping pipeline...")
 
@@ -133,6 +155,8 @@ def main():
             )
     elif args.source == "sobeys":
         run_sobeys_pipeline(upload_hf=args.upload_hf)
+    elif args.source == "alimentsduquebec":
+        run_alimentsduquebec_pipeline(upload_hf=args.upload_hf)
     else:
         logger.error(f"Unknown source: {args.source}")
 

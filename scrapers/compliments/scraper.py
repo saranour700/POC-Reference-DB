@@ -1,6 +1,5 @@
 import re
 import json
-import httpx
 from datetime import datetime, timezone
 from typing import Any
 
@@ -159,25 +158,30 @@ class ComplimentsScraper(BaseScraper):
         return nutrition_records
 
     def _parse_nutrition(self, html: str, retailer_product_id: str) -> dict[str, Any] | None:
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(html, "lxml")
-        header = soup.find(["h2", "h3", "h4"], string=re.compile(r"Nutrit", re.I))
+        from scrapling.parser import Selector
+        page = Selector(html)
+
+        header = page.find(["h2", "h3", "h4"], re.compile(r"Nutrit", re.I))
         if not header:
             return None
 
         serving_size = ""
-        parent = header.parent
-        if parent:
-            text_after = parent.get_text()
+        section = header.parent
+        if section:
+            text_after = section.get_all_text()
             match = re.search(r"per\s+(.+?)(?:\s*<br|\s*</div|\s*<table)", text_after, re.I | re.DOTALL)
             if not match:
-                elem = header.find_next_sibling(string=True)
-                if elem:
-                    serving_size = elem.strip()
+                next_sibling = header.next
+                if next_sibling and isinstance(next_sibling, str):
+                    serving_size = next_sibling.strip()
             else:
                 serving_size = match.group(1).strip()
 
-        table = header.find_next("table")
+        # Find table after the nutrition header — search within parent section first
+        section = header.parent
+        table = section.find("table") if section else None
+        if not table:
+            table = page.find("table")
         if not table:
             return None
 
@@ -214,9 +218,8 @@ class ComplimentsScraper(BaseScraper):
             cols = row.find_all(["td", "th"])
             if not cols:
                 continue
-            cell_text = cols[0].get_text(strip=True)
+            cell_text = cols[0].get_all_text().strip()
 
-            # Extract nutrient name and value from combined text like "Calories 170" or "Fat 2 g"
             key = None
             value = None
             pct = None
@@ -224,11 +227,9 @@ class ComplimentsScraper(BaseScraper):
             for nutrient_name, (value_key, pct_key) in nutrient_map.items():
                 if cell_text.lower().startswith(nutrient_name) or cell_text.lower().replace(" ", "").startswith(nutrient_name):
                     key = nutrient_name
-                    # Extract numeric value from cell text
                     value = self._extract_nutrient_value(cell_text, nutrient_name)
-                    # Extract % daily value from second cell
                     if len(cols) > 1:
-                        pct_text = cols[1].get_text(strip=True)
+                        pct_text = cols[1].get_all_text().strip()
                         pct = self._extract_percentage(pct_text)
                     break
 

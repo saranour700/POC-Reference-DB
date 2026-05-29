@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from scrapling.fetchers import Fetcher
 from scrapers.base import BaseScraper
 from utils.logger import setup_logger
 
@@ -97,16 +98,13 @@ class SobeysScraper(BaseScraper):
     def _process(self, slug: str):
         url = f"https://www.sobeys.com/products/{slug}"
         try:
-            resp = self.client.get(url, timeout=10)
-            if resp.status_code != 200 or "application/ld+json" not in resp.text:
+            page = Fetcher.get(url, timeout=10, impersonate="chrome")
+            if page.status != 200:
                 return None
-            match = re.search(
-                r'<script[^>]*type="application/ld\+json"[^>]*>(.*?)</script>',
-                resp.text, re.DOTALL
-            )
-            if not match:
+            scripts = page.css('script[type="application/ld+json"]')
+            if not scripts:
                 return None
-            data = json.loads(match.group(1))
+            data = json.loads(scripts[0].get_all_text())
             if not isinstance(data, dict) or data.get("@type") != "Product":
                 return None
             return self._parse(data, url)
